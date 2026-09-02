@@ -1,5 +1,8 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/auth.php';
+require_login();
+require_admin();
 
 $menu_aktif = $_GET['menu'] ?? 'dashboard';
 require_once 'koneksi.php';
@@ -20,7 +23,7 @@ if ($koneksi) {
             if ($row['absensi'] === 'I') $jumlah_izin  = (int) $row['jumlah'];
             if ($row['absensi'] === 'S') $jumlah_sakit = (int) $row['jumlah'];
         }
-    }
+    }   
 }
 $jam_masuk_standar  = '08:00:00';
 $jam_pulang_standar = '16:00:00';
@@ -29,7 +32,6 @@ $tahun_dipilih      = isset($_GET['tahun']) ? (int) $_GET['tahun'] : (int) date(
 $label_bulan = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 $kategori_list = ['tepat_waktu', 'terlambat', 'pulang_cepat', 'tidak_absen'];
 
-// Inisialisasi 12 bulan dengan 4 kategori = 0
 $data_bulanan = [];
 for ($b = 1; $b <= 12; $b++) {
     $data_bulanan[$b] = array_fill_keys($kategori_list, 0);
@@ -57,7 +59,6 @@ if ($koneksi) {
                     $kategori = 'tepat_waktu';
                 }
             } else {
-                // I, S, C, OFF tidak dihitung di chart ketepatan waktu ini
                 continue;
             }
 
@@ -67,7 +68,6 @@ if ($koneksi) {
     }
 }
 
-// Susun ulang jadi array per kategori untuk Chart.js (urut bulan 1-12)
 $chart_tepat_waktu   = [];
 $chart_terlambat     = [];
 $chart_pulang_cepat  = [];
@@ -86,375 +86,20 @@ for ($b = 1; $b <= 12; $b++) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Absen Berkah</title>
 
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
-    <style>
-        :root {
-            --teal-dark: #1a5d0e;
-            --teal-mid: #2e861e;
-            --teal-light: #4ed137;
-            --bg-page: #a7eb9b;
-            --text-muted: #c9f3c2;
-        }
-
-        body {
-            background-color: var(--bg-page);
-            min-height: 100vh;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            padding: 2rem;
-        }
-
-        .app-shell {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            background: #fff;
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 25px 60px rgba(23, 161, 154, 0.25);
-            min-height: 640px;
-        }
-
-        .sidebar {
-            width: 250px;
-            flex-shrink: 0;
-            background: linear-gradient(160deg, var(--teal-dark) 0%, var(--teal-mid) 60%, var(--teal-light) 100%);
-            padding: 1.75rem 1.25rem;
-            display: flex;
-            flex-direction: column;
-            color: #fff;
-        }
-
-        .brand {
-            font-size: 1.5rem;
-            font-weight: 900;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .brand {
-            height: 40px;
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .brand-logo {
-            width: 100px;
-            height: 100px;
-            object-fit: contain;
-            flex-shrink: 0;
-            margin-top: 0;
-        }
-
-        .brand .accent {
-            color: #ffd23f;
-        }
-
-        .menu-label {
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.65);
-            margin: 0.5rem 0 0.9rem 0.75rem;
-            user-select: none;
-            pointer-events: none; 
-        }
-
-        .menu-nav {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-        }
-
-        .menu-nav .menu-item a {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.7rem 0.9rem;
-            border-radius: 12px;
-            color: rgba(255, 255, 255, 0.9);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.92rem;
-            transition: background 0.2s ease, color 0.2s ease;
-        }
-
-        .menu-nav .menu-item a i {
-            font-size: 1.05rem;
-        }
-
-        .menu-nav .menu-item a:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
-        .menu-nav .menu-item.active a {
-            background: #fff;
-            color: var(--teal-dark);
-            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
-        }
-
-        .sidebar-footer {
-            margin-top: auto;
-            padding-top: 1.5rem;
-        }
-
-        .btn-logout {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.18);
-            border: none;
-            color: #fff;
-            font-weight: 700;
-            font-size: 0.85rem;
-            padding: 0.6rem;
-            border-radius: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .btn-logout:hover {
-            background: rgba(255, 255, 255, 0.3);
-            color: #fff;
-        }
-
-        .main-content {
-            flex: 1;
-            padding: 1.75rem 2rem;
-        }
-
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1.75rem;
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-
-        .topbar .search-box {
-            flex: 1;
-            max-width: 320px;
-            position: relative;
-        }
-
-        .topbar .search-box input {
-            width: 100%;
-            border: none;
-            background: #f1f5f5;
-            border-radius: 30px;
-            padding: 0.55rem 1rem 0.55rem 2.4rem;
-            font-size: 0.85rem;
-            outline: none;
-        }
-
-        .topbar .search-box i {
-            position: absolute;
-            left: 0.9rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #9aa5a5;
-        }
-
-        .btn-notif {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            background: var(--teal-mid);
-            color: #fff;
-            border: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-
-        .btn-notif .dot {
-            position: absolute;
-            top: 8px;
-            right: 9px;
-            width: 8px;
-            height: 8px;
-            background: #ff5b5b;
-            border-radius: 50%;
-            border: 2px solid #fff;
-        }
-
-        .page-title {
-            font-weight: 700;
-            color: #2d3a3a;
-            margin-bottom: 1rem;
-        }
-
-        .placeholder-card {
-            background: #f6fafa;
-            border-radius: 16px;
-            padding: 2rem;
-            text-align: center;
-            color: var(--text-muted);
-            border: 1px dashed #cfe4e2;
-        }
-        .stat-cards {
-            display: flex;
-            gap: 1.25rem;
-            margin-bottom: 1.75rem;
-            flex-wrap: wrap;
-        }
-
-        .stat-card {
-            flex: 1;
-            min-width: 160px;
-            background: #fff;
-            border-radius: 16px;
-            padding: 1.25rem 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            box-shadow: 0 6px 18px rgba(23, 161, 154, 0.12);
-            border: 1px solid #eef4f3;
-        }
-
-        .stat-card .stat-icon {
-            width: 52px;
-            height: 52px;
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.4rem;
-            color: #fff;
-            flex-shrink: 0;
-        }
-
-        .stat-card.hadir .stat-icon { background: var(--teal-mid); }
-        .stat-card.izin .stat-icon { background: #ffb020; }
-        .stat-card.sakit .stat-icon { backgr ound: #ff5b5b; }
-
-        .stat-card .stat-info .stat-number {
-            font-size: 1.6rem;
-            font-weight: 800;
-            color: #2d3a3a;
-            line-height: 1.1;
-        }
-
-        .stat-card .stat-info .stat-label {
-            font-size: 0.8rem;
-            color: #8a9797;
-            font-weight: 600;
-        }
-
-        .chart-row {
-            display: flex;
-            gap: 1.25rem;
-            flex-wrap: wrap;
-        }
-
-        .chart-card {
-            background: #fff;
-            border-radius: 16px;
-            padding: 1.25rem 1.5rem;
-            box-shadow: 0 6px 18px rgba(23, 161, 154, 0.12);
-            border: 1px solid #eef4f3;
-        }
-
-        .chart-card.bulanan {
-            flex: 2;
-            min-width: 320px;
-        }
-
-        .chart-card.tahunan {
-            flex: 1;
-            min-width: 260px;
-        }
-
-        .chart-card h6 {
-            font-weight: 700;
-            color: #2d3a3a;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        .chart-card canvas {
-            max-height: 280px;
-        }
-
-        @media (max-width: 768px) {
-            .app-shell { flex-direction: column; }
-            .sidebar { width: 100%; }
-        }
-    </style>
+    <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body>
 
     <div class="app-shell">
 
-        <aside class="sidebar">
-            <div class="brand">
-               <img src="bg-login/logo-berkah.png" alt="Logo Berkah" class="brand-logo">
-                <span><span class="accent">B</span>erkah</span>
-            </div>
-
-            <div class="menu-label">Main Menu</div>
-
-            <ul class="menu-nav">
-                <li class="menu-item <?php echo $menu_aktif === 'dashboard' ? 'active' : ''; ?>">
-                    <a href="dashboard.php?menu=dashboard">
-                        <i class="bi bi-grid-fill"></i> Dashboard
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'absensi' ? 'active' : ''; ?>">
-                    <a href="absensi.php?menu=absensi">
-                        <i class="bi bi-person-check-fill"></i> Absensi
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'karyawan' ? 'active' : ''; ?>">
-                    <a href="karyawan.php?menu=karyawan">
-                        <i class="bi bi-people-fill"></i> Karyawan
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'user' ? 'active' : ''; ?>">
-                    <a href="user.php?menu=user">
-                        <i class="bi bi-person-badge-fill"></i> User
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'jabatan' ? 'active' : ''; ?>">
-                    <a href="jabatan.php?menu=jabatan">
-                        <i class="bi bi-briefcase-fill"></i> Jabatan
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'login_unit' ? 'active' : ''; ?>">
-                    <a href="login_unit.php?menu=login_unit">
-                        <i class="bi bi-building"></i> Login Unit
-                    </a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'setting' ? 'active' : ''; ?>">
-                    <a href="setting.php?menu=setting"><i class="bi bi-gear-fill"></i> Setting</a>
-                </li>
-            </ul>
-
-            <div class="sidebar-footer">
-                <form action="logout.php" method="POST">
-                    <button type="submit" class="btn-logout">
-                        <i class="bi bi-box-arrow-right"></i> Go Out
-                    </button>
-                </form>
-            </div>
-        </aside>
+        <?php include __DIR__ . '/includes/sidebar.php'; ?>
 
         <main class="main-content">
+            <?php include __DIR__ . '/includes/mobile-topbar.php'; ?>
             <div class="topbar">
                 <div class="search-box">
                     <i class="bi bi-search"></i>
@@ -513,6 +158,7 @@ for ($b = 1; $b <= 12; $b++) {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/app.js"></script>
 
     <?php if ($menu_aktif === 'dashboard'): ?>
     <script>
@@ -525,7 +171,6 @@ for ($b = 1; $b <= 12; $b++) {
 
         const dataTahunan = <?php echo json_encode(array_values($data_tahunan)); ?>;
 
-        // ===== Bar chart: Presensi Perbulan =====
         new Chart(document.getElementById('chartBulanan'), {
             type: 'bar',
             data: {
@@ -572,7 +217,6 @@ for ($b = 1; $b <= 12; $b++) {
             }
         });
 
-        // ===== Pie chart: Presensi Pertahun =====
         new Chart(document.getElementById('chartTahunan'), {
             type: 'pie',
             data: {

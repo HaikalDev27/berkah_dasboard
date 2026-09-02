@@ -1,5 +1,7 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/auth.php';
+require_admin();
 
 $menu_aktif = $_GET['menu'] ?? 'setting';
 require_once 'koneksi.php';
@@ -7,14 +9,12 @@ require_once 'koneksi.php';
 $pesan = isset($_GET['pesan']) ? htmlspecialchars($_GET['pesan']) : '';
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 
-// ================= PROSES SIMPAN BATAS WAKTU - SEMUA KARYAWAN (UPDATE) =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'simpan_batas_waktu') {
     $id_batas  = (int) ($_POST['id_batas'] ?? 0);
     $jam_batas = trim($_POST['jam_batas'] ?? '');
 
     if ($koneksi && $id_batas > 0 && $jam_batas !== '') {
         $jam_esc = mysqli_real_escape_string($koneksi, $jam_batas);
-        // Menggunakan UPDATE, bukan INSERT, karena baris pengaturan "semua" sudah ada
         $query_update = "UPDATE batas_waktu_hadir SET jam_batas = '$jam_esc' WHERE id = $id_batas";
 
         if (mysqli_query($koneksi, $query_update)) {
@@ -30,15 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     }
 }
 
-// ================= PROSES TAMBAH ATURAN KHUSUS PER UNIT (INSERT) =================
-// Insert dipakai di sini karena aturan untuk unit tersebut memang belum ada barisnya.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'tambah_batas_unit') {
     $id_unit   = trim($_POST['id_unit'] ?? '');
     $jam_batas = trim($_POST['jam_batas'] ?? '');
 
     if ($koneksi && $id_unit !== '' && $jam_batas !== '') {
-        // Pastikan unit ini belum punya aturan supaya tidak dobel
-        $cek_stmt = mysqli_prepare($koneksi, "SELECT id FROM batas_waktu_hadir WHERE scope_type = 'unit' AND scope_value = ? LIMIT 1");
+         $cek_stmt = mysqli_prepare($koneksi, "SELECT id FROM batas_waktu_hadir WHERE scope_type = 'unit' AND scope_value = ? LIMIT 1");
         mysqli_stmt_bind_param($cek_stmt, 's', $id_unit);
         mysqli_stmt_execute($cek_stmt);
         $cek_hasil = mysqli_stmt_get_result($cek_stmt);
@@ -64,13 +61,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     }
 }
 
-// ================= PROSES UPDATE ATURAN KHUSUS PER UNIT (UPDATE) =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'update_batas_unit') {
     $id_batas  = (int) ($_POST['id_batas'] ?? 0);
     $jam_batas = trim($_POST['jam_batas'] ?? '');
 
     if ($koneksi && $id_batas > 0 && $jam_batas !== '') {
-        // Menggunakan UPDATE karena aturan unit ini sudah ada barisnya, hanya jamnya yang diubah
         $stmt = mysqli_prepare($koneksi, "UPDATE batas_waktu_hadir SET jam_batas = ? WHERE id = ? AND scope_type = 'unit'");
         mysqli_stmt_bind_param($stmt, 'si', $jam_batas, $id_batas);
 
@@ -87,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     }
 }
 
-// ================= PROSES HAPUS ATURAN KHUSUS PER UNIT (DELETE) =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'hapus_batas_unit') {
     $id_batas = (int) ($_POST['id_batas'] ?? 0);
 
@@ -108,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     }
 }
 
-// ================= PROSES TAMBAH VERSI APLIKASI (INSERT) =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'tambah_versi') {
     $version_code = (int) ($_POST['version_code'] ?? 0);
     $version_name = trim($_POST['version_name'] ?? '');
@@ -134,7 +127,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     }
 }
 
-// ================= AMBIL DATA BATAS WAKTU HADIR (SCOPE: SEMUA) =================
 $data_batas_waktu = null;
 
 if ($koneksi) {
@@ -145,12 +137,9 @@ if ($koneksi) {
     }
 }
 
-// ================= AMBIL DATA BATAS WAKTU HADIR PER UNIT (SCOPE: UNIT) =================
 $data_batas_unit = [];
 
 if ($koneksi) {
-    // COLLATE ditambahkan karena tabel unit (utf8mb4_0900_ai_ci) dan batas_waktu_hadir
-    // (utf8mb4_unicode_ci) memakai collation database yang berbeda
     $query_batas_unit = "SELECT b.*, u.nm_unit
                           FROM batas_waktu_hadir b
                           LEFT JOIN unit u ON b.scope_value = u.id_unit COLLATE utf8mb4_unicode_ci
@@ -164,7 +153,6 @@ if ($koneksi) {
     }
 }
 
-// ================= AMBIL DAFTAR UNIT YANG BELUM PUNYA ATURAN KHUSUS =================
 $daftar_unit_tersedia = [];
 
 if ($koneksi) {
@@ -182,7 +170,6 @@ if ($koneksi) {
     }
 }
 
-// ================= AMBIL DATA VERSI APLIKASI =================
 $data_versi = [];
 $versi_terbaru = null;
 
@@ -209,314 +196,16 @@ if ($koneksi) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 
-    <style>
-        :root {
-            --teal-dark: #1a5d0e;
-            --teal-mid: #2e861e;
-            --teal-light: #4ed137;
-            --bg-page: #a7eb9b;
-        }
-
-        body {
-            background-color: var(--bg-page);
-            min-height: 100vh;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            padding: 2rem;
-        }
-
-        .app-shell {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            background: #fff;
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 25px 60px rgba(23, 161, 154, 0.25);
-            min-height: 640px;
-        }
-
-        .sidebar {
-            width: 250px;
-            flex-shrink: 0;
-            background: linear-gradient(160deg, var(--teal-dark) 0%, var(--teal-mid) 60%, var(--teal-light) 100%);
-            padding: 1.75rem 1.25rem;
-            display: flex;
-            flex-direction: column;
-            color: #fff;
-        }
-
-        .brand {
-            font-size: 1.5rem;
-            font-weight: 900;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .brand {
-            height: 40px;
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .brand-logo {
-            width: 100px;
-            height: 100px;
-            object-fit: contain;
-            flex-shrink: 0;
-            margin-top: 0;
-        }
-
-        .brand .accent { color: #ffd23f; }
-
-        .menu-label {
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.65);
-            margin: 0.5rem 0 0.9rem 0.75rem;
-        }
-
-        .menu-nav {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-        }
-
-        .menu-nav .menu-item a {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.7rem 0.9rem;
-            border-radius: 12px;
-            color: rgba(255, 255, 255, 0.9);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.92rem;
-            transition: background 0.2s ease, color 0.2s ease;
-        }
-
-        .menu-nav .menu-item a i {
-            font-size: 1.05rem;
-        }
-
-        .menu-nav .menu-item a:hover { background: rgba(255, 255, 255, 0.15); }
-
-        .menu-nav .menu-item.active a {
-            background: #fff;
-            color: var(--teal-dark);
-            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
-        }
-
-        .sidebar-footer { margin-top: auto; padding-top: 1.5rem; }
-
-        .btn-logout {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.18);
-            border: none;
-            color: #fff;
-            font-weight: 700;
-            font-size: 0.85rem;
-            padding: 0.6rem;
-            border-radius: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .btn-logout:hover { background: rgba(255, 255, 255, 0.3); color: #fff; }
-
-        .main-content {
-            flex: 1;
-            padding: 1.75rem 2rem;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-            max-height: 640px;
-        }
-
-        .page-title { font-weight: 700; color: #2d3a3a; margin-bottom: 0.2rem; }
-        .page-sub { color: #8a9797; font-size: 0.85rem; margin-bottom: 1.5rem; }
-
-        .alert-info-custom {
-            border-radius: 12px;
-            font-size: 0.85rem;
-            padding: 0.75rem 1rem;
-            margin-bottom: 1.25rem;
-        }
-
-        .setting-card {
-            background: #fff;
-            border: 1px solid #eef4f3;
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-            margin-bottom: 1.5rem;
-        }
-
-        .setting-card-title {
-            font-weight: 700;
-            font-size: 1rem;
-            color: #2d3a3a;
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            margin-bottom: 0.3rem;
-        }
-
-        .setting-card-title i {
-            width: 38px;
-            height: 38px;
-            border-radius: 12px;
-            background: #e4f7e9;
-            color: var(--teal-mid);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-        }
-
-        .setting-card-sub {
-            color: #8a9797;
-            font-size: 0.8rem;
-            margin-bottom: 1.25rem;
-        }
-
-        .form-label {
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: #8a9797;
-            text-transform: uppercase;
-            margin-bottom: 0.3rem;
-        }
-
-        .form-control, .form-select {
-            border-radius: 10px;
-            border-color: #e4ece4;
-            background: #f8faf8;
-            font-size: 0.88rem;
-        }
-
-        .btn-simpan {
-            background: var(--teal-mid);
-            border: none;
-            border-radius: 10px;
-            font-weight: 600;
-            padding: 0.55rem 1.4rem;
-            color: #fff;
-        }
-
-        .btn-simpan:hover { background: var(--teal-dark); color: #fff; }
-
-        .versi-terbaru-box {
-            background: #e4f7e9;
-            border-radius: 12px;
-            padding: 0.9rem 1.1rem;
-            margin-bottom: 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-
-        .versi-terbaru-box .label-kecil {
-            font-size: 0.7rem;
-            font-weight: 700;
-            color: #1a5d0e;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .versi-terbaru-box .versi-angka {
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #1a5d0e;
-        }
-
-        .badge-wajib {
-            font-size: 0.68rem;
-            font-weight: 700;
-            padding: 0.25rem 0.6rem;
-            border-radius: 20px;
-        }
-
-        .table-versi {
-            font-size: 0.83rem;
-        }
-
-        .table-versi th {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            color: #8a9797;
-            font-weight: 700;
-            border-bottom-width: 1px;
-        }
-
-        .table-versi td { vertical-align: middle; }
-
-        @media (max-width: 768px) {
-            .app-shell { flex-direction: column; }
-            .sidebar { width: 100%; }
-        }
-    </style>
+    <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body>
 
     <div class="app-shell">
 
-        <!-- SIDEBAR -->
-        <aside class="sidebar">
-            <div class="brand">
-                <img src="bg-login/logo-berkah.png" alt="Logo Berkah" class="brand-logo">
-                <span><span class="accent">B</span>erkah</span>
-            </div>
+        <?php include __DIR__ . '/includes/sidebar.php'; ?>
 
-            <div class="menu-label">Main Menu</div>
-
-            <ul class="menu-nav">
-                <li class="menu-item <?php echo $menu_aktif === 'dashboard' ? 'active' : ''; ?>">
-                    <a href="dashboard.php?menu=dashboard"><i class="bi bi-grid-fill"></i> Dashboard</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'absensi' ? 'active' : ''; ?>">
-                    <a href="absensi.php?menu=absensi"><i class="bi bi-person-check-fill"></i> Absensi</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'karyawan' ? 'active' : ''; ?>">
-                    <a href="karyawan.php?menu=karyawan"><i class="bi bi-people-fill"></i> Karyawan</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'user' ? 'active' : ''; ?>">
-                    <a href="user.php?menu=user"><i class="bi bi-person-badge-fill"></i> User</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'jabatan' ? 'active' : ''; ?>">
-                    <a href="jabatan.php?menu=jabatan"><i class="bi bi-briefcase-fill"></i> Jabatan</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'login_unit' ? 'active' : ''; ?>">
-                    <a href="login_unit.php?menu=login_unit"><i class="bi bi-building"></i> Login Unit</a>
-                </li>
-                <li class="menu-item <?php echo $menu_aktif === 'setting' ? 'active' : ''; ?>">
-                    <a href="setting.php?menu=setting"><i class="bi bi-gear-fill"></i> Setting</a>
-                </li>
-            </ul>
-
-            <div class="sidebar-footer">
-                <form action="logout.php" method="POST">
-                    <button type="submit" class="btn-logout">
-                        <i class="bi bi-box-arrow-right"></i> Go Out
-                    </button>
-                </form>
-            </div>
-        </aside>
-
-        <!-- MAIN CONTENT -->
         <main class="main-content">
+            <?php include __DIR__ . '/includes/mobile-topbar.php'; ?>
             <div class="mb-3">
                 <h5 class="page-title">Pengaturan Sistem</h5>
                 <p class="page-sub">Kelola batas waktu kehadiran & versi aplikasi Berkah Presensi</p>
@@ -530,7 +219,6 @@ if ($koneksi) {
             <?php endif; ?>
 
             <div class="row g-3">
-                <!-- ================= CARD: BATAS WAKTU HADIR - SEMUA KARYAWAN ================= -->
                 <div class="col-12 col-lg-6">
                     <div class="setting-card h-100">
                         <div class="setting-card-title">
@@ -570,7 +258,6 @@ if ($koneksi) {
                     </div>
                 </div>
 
-                <!-- ================= CARD: BATAS WAKTU HADIR - PER UNIT ================= -->
                 <div class="col-12 col-lg-6">
                     <div class="setting-card h-100">
                         <div class="setting-card-title">
@@ -670,7 +357,6 @@ if ($koneksi) {
             </div>
 
             <div class="row g-3">
-                <!-- ================= CARD: APP VERSION ================= -->
                 <div class="col-12">
                     <div class="setting-card h-100">
                         <div class="setting-card-title">
@@ -742,7 +428,6 @@ if ($koneksi) {
                 </div>
             </div>
 
-            <!-- ================= RIWAYAT VERSI APLIKASI ================= -->
             <div class="setting-card">
                 <div class="setting-card-title">
                     <i class="bi bi-clock-history"></i>
@@ -799,5 +484,6 @@ if ($koneksi) {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/app.js"></script>
 </body>
 </html>

@@ -15,15 +15,15 @@ if (mysqli_num_rows($hasilCariUser) == 1) {
     $dataUser = mysqli_fetch_array($hasilCariUser, MYSQLI_ASSOC);
 
     if (password_verify($password, $dataUser['password'])) {
+        session_regenerate_id(true);
+
         $_SESSION['idUser'] = $dataUser['id_user'];
         $_SESSION['roleUser'] = $dataUser['hak_akses'];
         $_SESSION['petugasLogin'] = $dataUser['username'];
 
-        echo "<meta http-equiv='refresh' content='0;url=dashboard.php'>";
-    } else {
-        echo "<meta http-equiv='refresh' content='0;url=index.php?pesan=Gagal login, periksa username dan password'>";
+        header('Location: dashboard.php');
+        exit();
     }
-} else {
-    echo "<meta http-equiv='refresh' content='0;url=index.php?pesan=Gagal login, periksa username dan password'>";
 }
-?>
+header('Location: index.php?pesan=' . urlencode('Gagal login, periksa username dan password'));
+exit();
