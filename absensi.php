@@ -6,6 +6,14 @@ require_login();
 $menu_aktif = $_GET['menu'] ?? 'absensi';
 require_once 'koneksi.php';
 
+if ($koneksi) {
+    mysqli_query(
+        $koneksi,
+        "UPDATE absensi SET status_approval = 'approved'
+         WHERE status_approval = 'pending' AND diluar_radius = 0"
+    );
+}
+
 $jam_masuk_standar  = '08:00:00'; 
 $jam_pulang_standar = '16:00:00';
 
@@ -32,6 +40,9 @@ $halaman        = max(1, (int) ($_GET['halaman'] ?? 1));
 $date_from = $_GET['tanggal_mulai'] ?? date('Y-m-d', strtotime('-6 days'));
 $date_to   = $_GET['tanggal_selesai'] ?? date('Y-m-d');
 
+$aksi_status = $_GET['aksi_status'] ?? '';
+$aksi_pesan  = isset($_GET['aksi_pesan']) ? htmlspecialchars($_GET['aksi_pesan']) : '';
+
 /* Sortir tabel absensi lewat klik header kolom. */
 $kolom_sortir_valid = ['tanggal', 'nama', 'masuk', 'keluar', 'status'];
 $sort_by  = $_GET['sort'] ?? 'tanggal';
@@ -56,6 +67,17 @@ if ($koneksi) {
     $q_jabatan = mysqli_query($koneksi, "SELECT id_jabatan, nm_jabatan FROM jabatan ORDER BY nm_jabatan ASC");
     if ($q_jabatan) {
         while ($r = mysqli_fetch_assoc($q_jabatan)) $daftar_jabatan[] = $r;
+    }
+}
+
+$daftar_karyawan = [];
+if ($koneksi) {
+    $q_kar = mysqli_query(
+        $koneksi,
+        "SELECT nik, nama FROM karyawan WHERE status_aktif = 'Aktif' ORDER BY nama ASC"
+    );
+    if ($q_kar) {
+        while ($r = mysqli_fetch_assoc($q_kar)) $daftar_karyawan[] = $r;
     }
 }
 
@@ -132,10 +154,11 @@ if ($koneksi) {
     $query_absen = "SELECT
                         ab.id_absensi AS id, ab.tanggal, ab.masuk, ab.keluar, ab.absensi, ab.ket,
                         ab.foto_bukti, ab.latitude, ab.longitude,
+                        ab.status_approval, ab.catatan_approval, ab.diluar_radius,
                         k.nik, k.nama,
                         j.nm_jabatan AS jabatan,
                         u.nm_unit AS unit
-                    FROM absensi ab
+                    FROM absensi ab 
                     JOIN karyawan k ON k.nik = ab.nik
                     LEFT JOIN jabatan j ON j.id_jabatan = ab.id_jabatan
                     LEFT JOIN unit u ON u.id_unit = ab.id_unit
@@ -157,9 +180,6 @@ if ($koneksi) {
     }
 }
 
-/* Urutkan hasil sesuai kolom & arah yang dipilih (klik header tabel).
-   Dilakukan di PHP karena kolom "status" dihitung di PHP (tergantung
-   jam standar), bukan langsung dari kolom database. */
 usort($data_absen, function ($a, $b) use ($sort_by, $sort_dir) {
     switch ($sort_by) {
         case 'nama':
@@ -207,9 +227,6 @@ function build_query($override = [])
     return htmlspecialchars('?' . http_build_query($params));
 }
 
-/* Default arah urut saat kolom baru pertama kali diklik: teks -> A-Z
-   dulu, tanggal/jam -> yang terbaru dulu. Klik lagi pada kolom yang
-   sama akan membalik arahnya. */
 function sort_link($kolom, $label)
 {
     global $sort_by, $sort_dir;
@@ -247,6 +264,14 @@ function sort_link($kolom, $label)
     <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body>
+    <?php if ($aksi_pesan): ?>
+        <div class="app-shell-alert-wrap" style="max-width:1200px;margin:0.5rem auto 0;">
+            <div class="alert <?php echo $aksi_status === 'sukses' ? 'alert-success' : 'alert-danger'; ?> py-2 px-3 mb-2">
+                <i class="bi <?php echo $aksi_status === 'sukses' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'; ?> me-1"></i>
+                <?php echo $aksi_pesan; ?>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <div class="app-shell">
 
@@ -304,7 +329,7 @@ function sort_link($kolom, $label)
                     </table>
 
                     <p class="text-muted mt-4 mb-0" style="font-size: 0.72rem; line-height: 1.4;">
-                        *) Tepat waktu dihitung berdasarkan jam masuk standar yang tersimpan di sistem.
+                        -
                     </p>
                     <form method="GET" action="absensi.php" class="filter-panel mb-3">
                         <input type="hidden" name="menu" value="absensi">
@@ -445,14 +470,20 @@ function sort_link($kolom, $label)
                             </small>
                         </div>
 
-                        <a href="export_excel.php<?php
-                            $export_params = $_GET;
-                            $export_params['menu'] = 'absensi';
-                            unset($export_params['halaman']);
-                            echo htmlspecialchars('?' . http_build_query($export_params));
-                        ?>" class="btn-xlsx">
-                            <i class="bi bi-file-earmark-excel"></i> XLSX
-                        </a>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-success btn-sm" onclick="bukaModalTambahAbsensi()">
+                                <i class="bi bi-plus-lg"></i> Tambah Absensi
+                            </button>
+
+                            <a href="export_excel.php<?php
+                                $export_params = $_GET;
+                                $export_params['menu'] = 'absensi';
+                                unset($export_params['halaman']);
+                                echo htmlspecialchars('?' . http_build_query($export_params));
+                            ?>" class="btn-xlsx">
+                                <i class="bi bi-file-earmark-excel"></i> XLSX
+                            </a>
+                        </div>
                     </div>
 
                     
@@ -478,13 +509,14 @@ function sort_link($kolom, $label)
                                     <th><?php sort_link('status', 'Status'); ?></th>
                                     <th>Lokasi</th>
                                     <th style="text-align: center;">Foto</th>
+                                    <th style="text-align: center;">Approval</th>
                                     <th style="text-align: center;">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($data_tampil) === 0): ?>
                                     <tr>
-                                        <td colspan="9" class="text-center py-4 text-muted">
+                                        <td colspan="10" class="text-center py-4 text-muted">
                                             Tidak ada data absensi untuk filter ini.
                                         </td>
                                     </tr>
@@ -507,16 +539,23 @@ function sort_link($kolom, $label)
                                                 </span>
                                             </td>
                                             <td>
-                                                <?php
-                                                    echo !empty($row['latitude']) && !empty($row['longitude']) 
-                                                        ? "Lat: " . htmlspecialchars($row['latitude']) . ", Lng: " . htmlspecialchars($row['longitude']) 
-                                                        : "-";
-                                                ?>
+                                                <?php if (!empty($row['latitude']) && !empty($row['longitude'])): ?>
+                                                    <a id="modalFotoMaps" 
+                                                    href="https://www.google.com/maps?q=<?php echo urlencode($row['latitude'] . ',' . $row['longitude']); ?>" 
+                                                    target="_blank" 
+                                                    rel="noopener" 
+                                                    class="btn btn-sm btn-success"> 
+                                                        <i class="bi bi-geo-alt-fill"></i> 
+                                                        <span id="modalFotoKoordinat">Lat: <?php echo htmlspecialchars($row['latitude']); ?>, Lng: <?php echo htmlspecialchars($row['longitude']); ?></span> 
+                                                    </a>
+                                                <?php else: ?>
+                                                    -
+                                                <?php endif; ?>
                                             </td>
                                             <td style="text-align: center;">
                                                 <?php if (!empty($row['foto_bukti'])): ?>
                                                     <?php
-                                                        $foto_url = 'https://motion-hypnotize-tradition.ngrok-free.dev/api_presensi/' . htmlspecialchars($row['foto_bukti']);
+                                                        $foto_url = 'https://motion-hypnotize-tradition.ngrok-free.dev/api_presensi/' . $row['foto_bukti'];
                                                         $lat = $row['latitude'];
                                                         $lng = $row['longitude'];
                                                     ?>
@@ -535,13 +574,47 @@ function sort_link($kolom, $label)
                                                 <?php endif; ?>
                                             </td>
                                             <td style="text-align: center;">
+                                                <?php if ($row['status_approval'] === 'approved'): ?>
+                                                    <span class="badge bg-success">Disetujui</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-warning text-dark">Menunggu</span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($row['diluar_radius'])): ?>
+                                                    <br>
+                                                    <span class="badge bg-danger mt-1" title="Absen dilakukan di luar radius lokasi resmi">
+                                                        <i class="bi bi-geo-alt-fill"></i> Luar Radius
+                                                    </span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="text-align: center;">
                                                 <div class="d-inline-flex gap-1">
-                                                    <a href="absensi_edit.php?id=<?php echo (int) $row['id']; ?>" class="btn-aksi edit" title="Edit">
+                                                    <?php if ($row['status_approval'] !== 'approved'): ?>
+                                                        <a href="absensi_approve.php?id=<?php echo (int) $row['id']; ?>"
+                                                           class="btn-aksi" style="color:#198754;" title="Setujui"
+                                                           onclick="return confirm('Setujui absensi ini?');">
+                                                            <i class="bi bi-check-lg" style="font-size:0.8rem;"></i>
+                                                        </a>
+                                                        <button type="button" class="btn-aksi" style="color:#dc3545;" title="Tolak"
+                                                                onclick="bukaModalTolak(<?php echo (int) $row['id']; ?>, '<?php echo htmlspecialchars($row['nama'], ENT_QUOTES); ?>')">
+                                                            <i class="bi bi-x-lg" style="font-size:0.8rem;"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    <button type="button" class="btn-aksi edit" title="Edit"
+                                                            data-id="<?php echo (int) $row['id']; ?>"
+                                                            data-nik="<?php echo htmlspecialchars($row['nik'], ENT_QUOTES); ?>"
+                                                            data-nama="<?php echo htmlspecialchars($row['nama'], ENT_QUOTES); ?>"
+                                                            data-tanggal="<?php echo htmlspecialchars($tgl_tampil, ENT_QUOTES); ?>"
+                                                            data-jenis="<?php echo htmlspecialchars($row['absensi'], ENT_QUOTES); ?>"
+                                                            data-masuk="<?php echo htmlspecialchars(substr($row['masuk'] ?? '', 0, 5), ENT_QUOTES); ?>"
+                                                            data-keluar="<?php echo htmlspecialchars(substr($row['keluar'] ?? '', 0, 5), ENT_QUOTES); ?>"
+                                                            data-ket="<?php echo htmlspecialchars($row['ket'] ?? '', ENT_QUOTES); ?>"
+                                                            onclick="bukaModalEditAbsensi(this)">
                                                         <i class="bi bi-pencil-fill" style="font-size:0.7rem;"></i>
-                                                    </a>
-                                                    <a href="absensi_hapus.php?id=<?php echo (int) $row['id']; ?>" class="btn-aksi hapus" title="Hapus" onclick="return confirm('Hapus data absensi ini?');">
+                                                    </button>
+                                                    <button type="button" class="btn-aksi hapus" title="Hapus"
+                                                            onclick="hapusAbsensi(<?php echo (int) $row['id']; ?>, '<?php echo htmlspecialchars($row['nama'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($tgl_tampil, ENT_QUOTES); ?>')">
                                                         <i class="bi bi-trash-fill" style="font-size:0.7rem;"></i>
-                                                    </a>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -612,6 +685,119 @@ function sort_link($kolom, $label)
       </div>
     </div>
 
+    <!-- ===================== MODAL TAMBAH / EDIT ABSENSI ===================== -->
+    <div class="modal fade" id="modalAbsensi" tabindex="-1" aria-labelledby="modalAbsensiLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="formAbsensi" novalidate>
+            <div class="modal-header">
+              <h6 class="modal-title" id="modalAbsensiLabel">Tambah Absensi Manual</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+
+                <div id="modalAbsensiAlert" class="alert alert-danger py-2 px-3 d-none"></div>
+
+                <input type="hidden" name="id" id="inputAbsensiId" value="">
+
+                <div class="mb-3">
+                    <label class="form-label">Karyawan</label>
+                    <select name="nik" id="inputAbsensiNik" class="form-select" required>
+                        <option value="">-- Pilih Karyawan --</option>
+                        <?php foreach ($daftar_karyawan as $kar): ?>
+                            <option value="<?php echo htmlspecialchars($kar['nik']); ?>">
+                                <?php echo htmlspecialchars($kar['nama']); ?> (<?php echo htmlspecialchars($kar['nik']); ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted d-none" id="hintNikTerkunci">
+                        Karyawan tidak bisa diganti saat mengedit. Hapus data ini dan buat baru kalau salah pilih orang.
+                    </small>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Tanggal</label>
+                        <input type="date" name="tanggal" id="inputAbsensiTanggal" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Jenis Absensi</label>
+                        <select name="absensi" id="inputAbsensiJenis" class="form-select" required onchange="toggleJamModal()">
+                            <option value="H">Hadir</option>
+                            <option value="I">Izin</option>
+                            <option value="S">Sakit</option>
+                            <option value="C">Cuti</option>
+                            <option value="OFF">Libur</option>
+                            <option value="TK">Tidak Ada Keterangan</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row" id="wrapJamModal">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Jam Masuk</label>
+                        <input type="time" name="masuk" id="inputAbsensiMasuk" class="form-control">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Jam Keluar</label>
+                        <input type="time" name="keluar" id="inputAbsensiKeluar" class="form-control">
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label">Keterangan</label>
+                    <textarea name="ket" id="inputAbsensiKet" class="form-control" rows="3"
+                              placeholder="Contoh: HP rusak, absen manual dicatat satpam, dll."></textarea>
+                </div>
+
+                <div class="alert alert-secondary py-2 px-3 mb-0" style="font-size:0.8rem;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Data manual otomatis berstatus <strong>Disetujui</strong> dan tidak punya foto/koordinat GPS.
+                </div>
+
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-light border btn-sm" data-bs-dismiss="modal">Batal</button>
+              <button type="submit" class="btn btn-success btn-sm" id="btnSimpanAbsensi">
+                <i class="bi bi-check-lg me-1"></i> Simpan
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modalTolak" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="POST" action="absensi_reject.php">
+            <div class="modal-header">
+              <h6 class="modal-title">Tolak Absensi</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <input type="hidden" name="id" id="tolakId">
+              <p class="mb-2">Tolak absensi milik <strong id="tolakNama"></strong>?</p>
+              <label class="form-label">Alasan (opsional, akan dikirim ke karyawan)</label>
+              <textarea name="catatan" class="form-control" rows="3" placeholder="Contoh: foto tidak jelas, lokasi tidak sesuai, dst."></textarea>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-light border btn-sm" data-bs-dismiss="modal">Batal</button>
+              <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-x-lg me-1"></i> Tolak & Minta Absen Ulang
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form tersembunyi untuk hapus absensi. Pakai POST supaya tidak seperti
+         link GET biasa (yang gampang ke-trigger prefetch/crawler & rawan CSRF). -->
+    <form method="POST" action="absensi_hapus.php" id="formHapusAbsensi" style="display:none;">
+        <input type="hidden" name="id" id="hapusAbsensiId">
+    </form>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/app.js"></script>
     <script>
@@ -670,6 +856,131 @@ function sort_link($kolom, $label)
             const modalEl = document.getElementById('modalFoto');
             const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
+        }
+
+        function bukaModalTolak(id, nama) {
+            document.getElementById('tolakId').value = id;
+            document.getElementById('tolakNama').textContent = nama;
+
+            const modalEl = document.getElementById('modalTolak');
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        }
+
+        function toggleJamModal() {
+            const jenis = document.getElementById('inputAbsensiJenis').value;
+            document.getElementById('wrapJamModal').classList.toggle('d-none', jenis !== 'H');
+        }
+
+        function tampilTanggalHariIni() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const t = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + t;
+        }
+
+        function resetAlertModalAbsensi() {
+            const alertBox = document.getElementById('modalAbsensiAlert');
+            alertBox.classList.add('d-none');
+            alertBox.textContent = '';
+        }
+
+        function bukaModalTambahAbsensi() {
+            document.getElementById('formAbsensi').reset();
+            document.getElementById('inputAbsensiId').value = '';
+            document.getElementById('inputAbsensiNik').disabled = false;
+            document.getElementById('hintNikTerkunci').classList.add('d-none');
+            document.getElementById('inputAbsensiTanggal').value = tampilTanggalHariIni();
+            document.getElementById('modalAbsensiLabel').textContent = 'Tambah Absensi Manual';
+            resetAlertModalAbsensi();
+            toggleJamModal();
+
+            const modalEl = document.getElementById('modalAbsensi');
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+
+        function bukaModalEditAbsensi(el) {
+            document.getElementById('formAbsensi').reset();
+            document.getElementById('inputAbsensiId').value = el.dataset.id;
+
+            const selectNik = document.getElementById('inputAbsensiNik');
+            selectNik.value = el.dataset.nik;
+            selectNik.disabled = true;
+            document.getElementById('hintNikTerkunci').classList.remove('d-none');
+
+            document.getElementById('inputAbsensiTanggal').value = el.dataset.tanggal;
+            document.getElementById('inputAbsensiJenis').value = el.dataset.jenis;
+            document.getElementById('inputAbsensiMasuk').value = el.dataset.masuk || '';
+            document.getElementById('inputAbsensiKeluar').value = el.dataset.keluar || '';
+            document.getElementById('inputAbsensiKet').value = el.dataset.ket || '';
+
+            document.getElementById('modalAbsensiLabel').textContent = 'Edit Absensi - ' + el.dataset.nama;
+            resetAlertModalAbsensi();
+            toggleJamModal();
+
+            const modalEl = document.getElementById('modalAbsensi');
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+
+        document.getElementById('formAbsensi').addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const btn = document.getElementById('btnSimpanAbsensi');
+            const alertBox = document.getElementById('modalAbsensiAlert');
+            resetAlertModalAbsensi();
+
+            const teksAsli = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menyimpan...';
+
+            const formData = new FormData(this);
+            // select nik yang di-disable saat mode edit tidak ikut terkirim FormData,
+            // jadi nilainya ditambahkan manual di sini.
+            const selectNik = document.getElementById('inputAbsensiNik');
+            if (selectNik.disabled) {
+                formData.set('nik', selectNik.value);
+            }
+
+            const idEdit = document.getElementById('inputAbsensiId').value;
+            const url = 'absensi_tambah.php' + (idEdit ? ('?id=' + encodeURIComponent(idEdit)) : '');
+
+            fetch(url, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    const tujuan = new URL(window.location.href);
+                    tujuan.searchParams.set('aksi_status', 'sukses');
+                    tujuan.searchParams.set('aksi_pesan', data.message);
+                    window.location.href = tujuan.toString();
+                } else {
+                    alertBox.textContent = data.message || 'Gagal menyimpan data.';
+                    alertBox.classList.remove('d-none');
+                    btn.disabled = false;
+                    btn.innerHTML = teksAsli;
+                }
+            })
+            .catch(function () {
+                alertBox.textContent = 'Terjadi kesalahan jaringan. Coba lagi.';
+                alertBox.classList.remove('d-none');
+                btn.disabled = false;
+                btn.innerHTML = teksAsli;
+            });
+        });
+
+        function hapusAbsensi(id, nama, tanggal) {
+            const ok = confirm(
+                'Hapus data absensi milik ' + nama + ' tanggal ' + tanggal + '?\n' +
+                'Data yang sudah dihapus tidak bisa dikembalikan.'
+            );
+            if (!ok) return;
+
+            document.getElementById('hapusAbsensiId').value = id;
+            document.getElementById('formHapusAbsensi').submit();
         }
 
         function zoomFoto(delta) {

@@ -168,7 +168,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    height: auto;
+    max-height: fit-content;
 }
 
 .mobile-topbar { display: none; }
