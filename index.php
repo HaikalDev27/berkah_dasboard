@@ -1,4 +1,4 @@
-<?php
+ <?php
 session_start();
 
 /* Kalau sudah login, tidak perlu lihat halaman login lagi. */

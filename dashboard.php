@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/includes/auth.php';
 require_login();
-require_admin();
 
 $menu_aktif = $_GET['menu'] ?? 'dashboard';
 require_once 'koneksi.php';
@@ -23,10 +22,22 @@ if ($koneksi) {
             if ($row['absensi'] === 'I') $jumlah_izin  = (int) $row['jumlah'];
             if ($row['absensi'] === 'S') $jumlah_sakit = (int) $row['jumlah'];
         }
-    }   
+    }
 }
-$jam_masuk_standar  = '08:00:00';
+// Ambil batas waktu hadir dari database (diisi lewat halaman Setting),
+// bukan hardcode, supaya konsisten dengan halaman Absensi dan Setting.
+$jam_masuk_standar  = '08:00:00'; // fallback kalau tabel kosong
 $jam_pulang_standar = '16:00:00';
+
+if ($koneksi) {
+    $q_batas_dash = mysqli_query(
+        $koneksi,
+        "SELECT jam_batas FROM batas_waktu_hadir WHERE scope_type = 'semua' ORDER BY id DESC LIMIT 1"
+    );
+    if ($q_batas_dash && ($r_batas_dash = mysqli_fetch_assoc($q_batas_dash))) {
+        $jam_masuk_standar = $r_batas_dash['jam_batas'];
+    }
+}
 $tahun_dipilih      = isset($_GET['tahun']) ? (int) $_GET['tahun'] : (int) date('Y');
 
 $label_bulan = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -89,17 +100,66 @@ for ($b = 1; $b <= 12; $b++) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-
     <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body>
 
     <div class="app-shell">
 
-        <?php include __DIR__ . '/includes/sidebar.php'; ?>
+        <aside class="sidebar">
+            <div class="brand">
+               <img src="bg-login/logo-berkah.png" alt="Logo Berkah" class="brand-logo">
+                <span><span class="accent">B</span>erkah</span>
+            </div>
+
+            <div class="menu-label">Main Menu</div>
+
+            <ul class="menu-nav">
+                <li class="menu-item <?php echo $menu_aktif === 'dashboard' ? 'active' : ''; ?>">
+                    <a href="dashboard.php?menu=dashboard">
+                        <i class="bi bi-grid-fill"></i> Dashboard
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'absensi' ? 'active' : ''; ?>">
+                    <a href="absensi.php?menu=absensi">
+                        <i class="bi bi-person-check-fill"></i> Absensi
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'karyawan' ? 'active' : ''; ?>">
+                    <a href="karyawan.php?menu=karyawan">
+                        <i class="bi bi-people-fill"></i> Karyawan
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'user' ? 'active' : ''; ?>">
+                    <a href="user.php?menu=user">
+                        <i class="bi bi-person-badge-fill"></i> User
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'jabatan' ? 'active' : ''; ?>">
+                    <a href="jabatan.php?menu=jabatan">
+                        <i class="bi bi-briefcase-fill"></i> Jabatan
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'login_unit' ? 'active' : ''; ?>">
+                    <a href="login_unit.php?menu=login_unit">
+                        <i class="bi bi-building"></i> Login Unit
+                    </a>
+                </li>
+                <li class="menu-item <?php echo $menu_aktif === 'setting' ? 'active' : ''; ?>">
+                    <a href="setting.php?menu=setting"><i class="bi bi-gear-fill"></i> Setting</a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <form action="logout.php" method="POST">
+                    <button type="submit" class="btn-logout">
+                        <i class="bi bi-box-arrow-right"></i> Go Out
+                    </button>
+                </form>
+            </div>
+        </aside>
 
         <main class="main-content">
-            <?php include __DIR__ . '/includes/mobile-topbar.php'; ?>
             <div class="topbar">
                 <div class="search-box">
                     <i class="bi bi-search"></i>
@@ -158,7 +218,6 @@ for ($b = 1; $b <= 12; $b++) {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/app.js"></script>
 
     <?php if ($menu_aktif === 'dashboard'): ?>
     <script>

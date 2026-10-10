@@ -109,20 +109,153 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     $is_mandatory = isset($_POST['is_mandatory']) ? 1 : 0;
     $changelog    = trim($_POST['changelog'] ?? '');
 
+    // Contoh penyiapan isi judul & pesan untuk notifikasi manual
+    $judul_notif = "Update Versi " . $version_name;
+    $pesan_notif = "Versi baru telah tersedia. Silakan perbarui aplikasi Anda.";
+
     if ($koneksi && $version_code > 0 && $version_name !== '' && $apk_url !== '') {
-        $query_insert = "INSERT INTO app_version (version_code, version_name, apk_url, is_mandatory, changelog, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
-        $stmt = mysqli_prepare($koneksi, $query_insert);
-        mysqli_stmt_bind_param($stmt, 'issis', $version_code, $version_name, $apk_url, $is_mandatory, $changelog);
+        
+        // 1. Insert ke tabel app_version
+        $query_app = "INSERT INTO app_version (version_code, version_name, apk_url, is_mandatory, changelog, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
+        $stmt_app = mysqli_prepare($koneksi, $query_app);
+        
+        if ($stmt_app) {
+            mysqli_stmt_bind_param($stmt_app, 'issis', $version_code, $version_name, $apk_url, $is_mandatory, $changelog);
+            $exec_app = mysqli_stmt_execute($stmt_app);
+            mysqli_stmt_close($stmt_app);
+
+            if ($exec_app) {
+                // 2. Insert ke tabel notifikasi_manual jika query pertama berhasil
+                $query_notif = "INSERT INTO notifikasi_manual (judul, pesan, target_type, target_value, status) VALUES (?, ?, 'semua', '', 'pending')";
+                $stmt_notif = mysqli_prepare($koneksi, $query_notif);
+
+                if ($stmt_notif) {
+                    // 'ss' untuk 2 parameter string (judul & pesan)
+                    mysqli_stmt_bind_param($stmt_notif, 'ss', $judul_notif, $pesan_notif);
+                    mysqli_stmt_execute($stmt_notif);
+                    mysqli_stmt_close($stmt_notif);
+                }
+
+                header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Versi aplikasi baru berhasil ditambahkan.'));
+                exit;
+            }
+        }
+
+        // Jika gagal execute atau prepare query pertama
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal menambahkan versi: ' . mysqli_error($koneksi)));
+        exit;
+
+    } else {
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Data versi aplikasi tidak lengkap.'));
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'tambah_lokasi') {
+    $nama_lokasi  = trim($_POST['nama_lokasi'] ?? '');
+    $latitude     = trim($_POST['latitude'] ?? '');
+    $longitude    = trim($_POST['longitude'] ?? '');
+    $radius_meter = (int) ($_POST['radius_meter'] ?? 0);
+
+    if ($koneksi && $nama_lokasi !== '' && $latitude !== '' && $longitude !== '' && $radius_meter > 0) {
+        $stmt = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO lokasi_absensi (nama_lokasi, latitude, longitude, radius_meter, aktif) VALUES (?, ?, ?, ?, 1)"
+        );
+        mysqli_stmt_bind_param($stmt, 'sddi', $nama_lokasi, $latitude, $longitude, $radius_meter);
 
         if (mysqli_stmt_execute($stmt)) {
-            header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Versi aplikasi baru berhasil ditambahkan.'));
+            header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Titik lokasi baru berhasil ditambahkan.'));
             exit;
         } else {
-            header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal menambahkan versi: ' . mysqli_error($koneksi)));
+            header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal menambahkan titik lokasi: ' . mysqli_error($koneksi)));
             exit;
         }
     } else {
-        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Data versi aplikasi tidak lengkap.'));
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Data titik lokasi tidak lengkap.'));
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'update_lokasi') {
+    $id_lokasi    = (int) ($_POST['id_lokasi'] ?? 0);
+    $nama_lokasi  = trim($_POST['nama_lokasi'] ?? '');
+    $latitude     = trim($_POST['latitude'] ?? '');
+    $longitude    = trim($_POST['longitude'] ?? '');
+    $radius_meter = (int) ($_POST['radius_meter'] ?? 0);
+    $aktif        = isset($_POST['aktif']) ? 1 : 0;
+
+    if ($koneksi && $id_lokasi > 0 && $nama_lokasi !== '' && $latitude !== '' && $longitude !== '' && $radius_meter > 0) {
+        $stmt = mysqli_prepare(
+            $koneksi,
+            "UPDATE lokasi_absensi SET nama_lokasi = ?, latitude = ?, longitude = ?, radius_meter = ?, aktif = ? WHERE id = ?"
+        );
+        mysqli_stmt_bind_param($stmt, 'sddiii', $nama_lokasi, $latitude, $longitude, $radius_meter, $aktif, $id_lokasi);
+
+        if (mysqli_stmt_execute($stmt)) {
+            header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Titik lokasi berhasil diperbarui.'));
+            exit;
+        } else {
+            header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal memperbarui titik lokasi: ' . mysqli_error($koneksi)));
+            exit;
+        }
+    } else {
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Data titik lokasi tidak lengkap.'));
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'hapus_lokasi') {
+    $id_lokasi = (int) ($_POST['id_lokasi'] ?? 0);
+
+    if ($koneksi && $id_lokasi > 0) {
+        $stmt = mysqli_prepare($koneksi, "DELETE FROM lokasi_absensi WHERE id = ?");
+        mysqli_stmt_bind_param($stmt, 'i', $id_lokasi);
+
+        if (mysqli_stmt_execute($stmt)) {
+            header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Titik lokasi berhasil dihapus.'));
+            exit;
+        } else {
+            header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal menghapus titik lokasi: ' . mysqli_error($koneksi)));
+            exit;
+        }
+    } else {
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Titik lokasi tidak ditemukan.'));
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'kirim_notifikasi') {
+    $judul_notif  = trim($_POST['judul_notif'] ?? '');
+    $pesan_notif  = trim($_POST['pesan_notif'] ?? '');
+    $target_type  = trim($_POST['target_type'] ?? '');
+    $target_value = trim($_POST['target_value'] ?? '');
+
+    $target_type_valid = in_array($target_type, ['semua', 'unit', 'karyawan'], true);
+
+    if ($target_type === 'semua') {
+        $target_value = null;
+    }
+
+    if (
+        $koneksi && $judul_notif !== '' && $pesan_notif !== '' && $target_type_valid
+        && ($target_type === 'semua' || $target_value !== '')
+    ) {
+        $stmt = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO notifikasi_manual (judul, pesan, target_type, target_value, status) VALUES (?, ?, ?, ?, 'pending')"
+        );
+        mysqli_stmt_bind_param($stmt, 'ssss', $judul_notif, $pesan_notif, $target_type, $target_value);
+
+        if (mysqli_stmt_execute($stmt)) {
+            header('Location: setting.php?menu=setting&status=sukses&pesan=' . urlencode('Notifikasi berhasil dimasukkan ke antrian dan akan segera dikirim.'));
+            exit;
+        } else {
+            header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Gagal mengirim notifikasi: ' . mysqli_error($koneksi)));
+            exit;
+        }
+    } else {
+        header('Location: setting.php?menu=setting&status=gagal&pesan=' . urlencode('Data notifikasi tidak lengkap. Pastikan judul, pesan, dan target sudah diisi.'));
         exit;
     }
 }
@@ -185,6 +318,60 @@ if ($koneksi) {
         $versi_terbaru = $data_versi[0];
     }
 }
+
+$data_lokasi = [];
+
+if ($koneksi) {
+    $query_lokasi = "SELECT * FROM lokasi_absensi ORDER BY nama_lokasi ASC";
+    $result_lokasi = mysqli_query($koneksi, $query_lokasi);
+    if ($result_lokasi) {
+        while ($row = mysqli_fetch_assoc($result_lokasi)) {
+            $data_lokasi[] = $row;
+        }
+    }
+}
+
+$semua_unit = [];
+
+if ($koneksi) {
+    $query_semua_unit = "SELECT id_unit, nm_unit FROM unit ORDER BY nm_unit ASC";
+    $result_semua_unit = mysqli_query($koneksi, $query_semua_unit);
+    if ($result_semua_unit) {
+        while ($row = mysqli_fetch_assoc($result_semua_unit)) {
+            $semua_unit[] = $row;
+        }
+    }
+}
+
+$semua_karyawan = [];
+
+if ($koneksi) {
+    $query_semua_karyawan = "SELECT nik, nama FROM karyawan WHERE status_aktif = 'Aktif' ORDER BY nama ASC";
+    $result_semua_karyawan = mysqli_query($koneksi, $query_semua_karyawan);
+    if ($result_semua_karyawan) {
+        while ($row = mysqli_fetch_assoc($result_semua_karyawan)) {
+            $semua_karyawan[] = $row;
+        }
+    }
+}
+
+$riwayat_notifikasi = [];
+
+if ($koneksi) {
+    $query_notifikasi = "SELECT n.*, u.nm_unit, k.nama AS nama_karyawan
+                          FROM notifikasi_manual n
+                          LEFT JOIN unit u ON n.target_type = 'unit' AND n.target_value = u.id_unit COLLATE utf8mb4_unicode_ci
+                          LEFT JOIN karyawan k ON n.target_type = 'karyawan' AND n.target_value = k.nik COLLATE utf8mb4_unicode_ci
+                          ORDER BY n.created_at DESC
+                          LIMIT 20";
+    $result_notifikasi = mysqli_query($koneksi, $query_notifikasi);
+    if ($result_notifikasi) {
+        while ($row = mysqli_fetch_assoc($result_notifikasi)) {
+            $riwayat_notifikasi[] = $row;
+        }
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -358,6 +545,252 @@ if ($koneksi) {
 
             <div class="row g-3">
                 <div class="col-12">
+                    <div class="setting-card">
+                        <div class="setting-card-title">
+                            <i class="bi bi-geo-alt-fill"></i>
+                            Titik Lokasi Absensi (Radius)
+                        </div>
+                        <div class="setting-card-sub">
+                            Kelola titik lokasi resmi (kantor, kandang, dll) beserta radius
+                            yang diizinkan untuk absen tanpa perlu foto bukti tambahan.
+                        </div>
+
+                        <?php if (count($data_lokasi) > 0): ?>
+                            <div class="table-responsive mb-3">
+                                <table class="table table-versi align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Nama Lokasi</th>
+                                            <th>Latitude</th>
+                                            <th>Longitude</th>
+                                            <th>Radius (m)</th>
+                                            <th>Aktif</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($data_lokasi as $lok): ?>
+                                            <tr>
+                                                <form method="POST" action="setting.php">
+                                                <input type="hidden" name="aksi" value="update_lokasi">
+                                                <input type="hidden" name="id_lokasi" value="<?php echo (int) $lok['id']; ?>">
+                                                <td style="min-width:140px;">
+                                                    <input type="text" name="nama_lokasi" class="form-control form-control-sm"
+                                                           value="<?php echo htmlspecialchars($lok['nama_lokasi']); ?>" required>
+                                                </td>
+                                                <td style="min-width:110px;">
+                                                    <input type="text" name="latitude" class="form-control form-control-sm"
+                                                           value="<?php echo htmlspecialchars($lok['latitude']); ?>" required>
+                                                </td>
+                                                <td style="min-width:110px;">
+                                                    <input type="text" name="longitude" class="form-control form-control-sm"
+                                                           value="<?php echo htmlspecialchars($lok['longitude']); ?>" required>
+                                                </td>
+                                                <td style="min-width:90px;">
+                                                    <input type="number" name="radius_meter" class="form-control form-control-sm"
+                                                           value="<?php echo (int) $lok['radius_meter']; ?>" min="1" required>
+                                                </td>
+                                                <td style="text-align:center;">
+                                                    <input type="checkbox" name="aktif" class="form-check-input"
+                                                           <?php echo ((int) $lok['aktif'] === 1) ? 'checked' : ''; ?>>
+                                                </td>
+                                                <td style="white-space:nowrap;">
+                                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Simpan">
+                                                        <i class="bi bi-check-lg"></i>
+                                                    </button>
+                                                </td>
+                                                </form>
+                                                <td style="width:36px;">
+                                                    <form method="POST" action="setting.php" onsubmit="return confirm('Hapus titik lokasi ini?');">
+                                                        <input type="hidden" name="aksi" value="hapus_lokasi">
+                                                        <input type="hidden" name="id_lokasi" value="<?php echo (int) $lok['id']; ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <div class="text-center py-3 text-muted">
+                                <i class="bi bi-geo-alt" style="font-size:1.8rem;"></i>
+                                <p class="mt-2 mb-0" style="font-size:0.85rem;">Belum ada titik lokasi. Tambahkan minimal 1 supaya karyawan bisa absen tanpa foto tambahan.</p>
+                            </div>
+                        <?php endif; ?>
+
+                        <hr>
+                        <form method="POST" action="setting.php">
+                            <input type="hidden" name="aksi" value="tambah_lokasi">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label">Nama Lokasi</label>
+                                    <input type="text" name="nama_lokasi" class="form-control" placeholder="cth: Kantor Pusat" required>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label">Latitude</label>
+                                    <input type="text" name="latitude" class="form-control" placeholder="-6.9753200" required>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label">Longitude</label>
+                                    <input type="text" name="longitude" class="form-control" placeholder="108.4832100" required>
+                                </div>
+                                <div class="col-8 col-md-2">
+                                    <label class="form-label">Radius (m)</label>
+                                    <input type="number" name="radius_meter" class="form-control" min="1" placeholder="100" required>
+                                </div>
+                                <div class="col-4 col-md-1 d-grid">
+                                    <button type="submit" class="btn btn-simpan" title="Tambah">
+                                        <i class="bi bi-plus-lg"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-muted mt-2 mb-0" style="font-size:0.75rem;">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Tips: cari koordinat lewat Google Maps — klik kanan di titik lokasi, salin angka yang muncul.
+                            </p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-lg-6">
+                    <div class="setting-card h-100">
+                        <div class="setting-card-title">
+                            <i class="bi bi-bell-fill"></i>
+                            Kirim Notifikasi Manual
+                        </div>
+                        <div class="setting-card-sub">
+                            Kirim notifikasi push ke semua karyawan, satu unit tertentu, atau satu karyawan tertentu.
+                            Notifikasi masuk ke antrian dan dikirim otomatis lewat FCM.
+                        </div>
+
+                        <form method="POST" action="setting.php" id="form-notifikasi">
+                            <input type="hidden" name="aksi" value="kirim_notifikasi">
+
+                            <div class="mb-3">
+                                <label class="form-label">Judul Notifikasi</label>
+                                <input type="text" name="judul_notif" class="form-control" maxlength="100"
+                                       placeholder="cth: Pengumuman Libur" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Isi Pesan</label>
+                                <textarea name="pesan_notif" class="form-control" rows="3"
+                                          placeholder="Tulis isi pesan notifikasi..." required></textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Kirim Ke</label>
+                                <select name="target_type" id="target_type" class="form-select" required>
+                                    <option value="semua">Semua Karyawan</option>
+                                    <option value="unit">Unit Tertentu</option>
+                                    <option value="karyawan">Karyawan Tertentu</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3" id="wrap-target-unit" style="display:none;">
+                                <label class="form-label">Pilih Unit</label>
+                                <select name="target_value_unit" class="form-select">
+                                    <option value="" disabled selected>-- Pilih Unit --</option>
+                                    <?php foreach ($semua_unit as $u): ?>
+                                        <option value="<?php echo htmlspecialchars($u['id_unit']); ?>">
+                                            <?php echo htmlspecialchars($u['nm_unit']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="mb-3" id="wrap-target-karyawan" style="display:none;">
+                                <label class="form-label">Pilih Karyawan</label>
+                                <select name="target_value_karyawan" class="form-select">
+                                    <option value="" disabled selected>-- Pilih Karyawan --</option>
+                                    <?php foreach ($semua_karyawan as $k): ?>
+                                        <option value="<?php echo htmlspecialchars($k['nik']); ?>">
+                                            <?php echo htmlspecialchars($k['nama']); ?> (<?php echo htmlspecialchars($k['nik']); ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <input type="hidden" name="target_value" id="target_value_final">
+
+                            <button type="submit" class="btn btn-simpan">
+                                <i class="bi bi-send-fill me-1"></i> Kirim Notifikasi
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-6">
+                    <div class="setting-card h-100">
+                        <div class="setting-card-title">
+                            <i class="bi bi-clock-history"></i>
+                            Riwayat Notifikasi Manual
+                        </div>
+                        <div class="setting-card-sub">20 notifikasi terakhir yang dikirim dari panel ini</div>
+
+                        <?php if (count($riwayat_notifikasi) === 0): ?>
+                            <div class="text-center py-4 text-muted">
+                                <i class="bi bi-bell-slash" style="font-size:2rem;"></i>
+                                <p class="mt-2 mb-0">Belum ada notifikasi yang dikirim.</p>
+                            </div>
+                        <?php else: ?>
+                            <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
+                                <table class="table table-versi align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Judul</th>
+                                            <th>Target</th>
+                                            <th>Status</th>
+                                            <th>Dibuat</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($riwayat_notifikasi as $n): ?>
+                                            <?php
+                                                if ($n['target_type'] === 'semua') {
+                                                    $target_tampil = 'Semua Karyawan';
+                                                } elseif ($n['target_type'] === 'unit') {
+                                                    $target_tampil = $n['nm_unit'] ?? $n['target_value'];
+                                                } else {
+                                                    $target_tampil = $n['nama_karyawan'] ?? $n['target_value'];
+                                                }
+
+                                                $badge_class = 'bg-secondary';
+                                                if ($n['status'] === 'sent') {
+                                                    $badge_class = 'bg-success';
+                                                } elseif ($n['status'] === 'failed') {
+                                                    $badge_class = 'bg-danger';
+                                                } elseif ($n['status'] === 'pending') {
+                                                    $badge_class = 'bg-warning text-dark';
+                                                }
+                                            ?>
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold"><?php echo htmlspecialchars($n['judul']); ?></div>
+                                                    <div class="text-muted" style="font-size:0.75rem;">
+                                                        <?php echo htmlspecialchars(mb_strimwidth($n['pesan'], 0, 60, '...')); ?>
+                                                    </div>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($target_tampil); ?></td>
+                                                <td><span class="badge <?php echo $badge_class; ?> badge-wajib"><?php echo htmlspecialchars(ucfirst($n['status'])); ?></span></td>
+                                                <td style="white-space:nowrap; font-size:0.8rem;"><?php echo htmlspecialchars($n['created_at']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
                     <div class="setting-card h-100">
                         <div class="setting-card-title">
                             <i class="bi bi-phone-fill"></i>
@@ -485,5 +918,40 @@ if ($koneksi) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/app.js"></script>
+    <script>
+        (function () {
+            const form        = document.getElementById('form-notifikasi');
+            if (!form) return;
+
+            const targetType    = document.getElementById('target_type');
+            const wrapUnit      = document.getElementById('wrap-target-unit');
+            const wrapKaryawan  = document.getElementById('wrap-target-karyawan');
+            const selectUnit    = form.querySelector('select[name="target_value_unit"]');
+            const selectKaryawan = form.querySelector('select[name="target_value_karyawan"]');
+            const hiddenTarget  = document.getElementById('target_value_final');
+
+            function toggleTarget() {
+                const val = targetType.value;
+                wrapUnit.style.display = (val === 'unit') ? '' : 'none';
+                wrapKaryawan.style.display = (val === 'karyawan') ? '' : 'none';
+                selectUnit.required = (val === 'unit');
+                selectKaryawan.required = (val === 'karyawan');
+            }
+
+            targetType.addEventListener('change', toggleTarget);
+            toggleTarget();
+
+            form.addEventListener('submit', function () {
+                const val = targetType.value;
+                if (val === 'unit') {
+                    hiddenTarget.value = selectUnit.value;
+                } else if (val === 'karyawan') {
+                    hiddenTarget.value = selectKaryawan.value;
+                } else {
+                    hiddenTarget.value = '';
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
